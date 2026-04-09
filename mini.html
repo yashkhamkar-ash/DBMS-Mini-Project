@@ -1,0 +1,712 @@
+import { useState, useEffect } from "react";
+
+// ── Inject Google Font ──────────────────────────────────────────────
+const fontLink = document.createElement("link");
+fontLink.href = "https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap";
+fontLink.rel = "stylesheet";
+document.head.appendChild(fontLink);
+
+// ── Seed Data ──────────────────────────────────────────────────────
+const INIT_VEHICLES = [
+  { id:1, type:"Bike",  brand:"Honda",   model:"Activa 6G",     reg:"MH12-AA-0001", fuel:"Petrol",   rph:50,  rpd:400,  status:"Available" },
+  { id:2, type:"Bike",  brand:"Yamaha",  model:"FZ-S V3",       reg:"MH12-BB-0002", fuel:"Petrol",   rph:80,  rpd:600,  status:"Available" },
+  { id:3, type:"Bike",  brand:"Hero",    model:"Splendor Plus",  reg:"MH12-CC-0003", fuel:"Petrol",   rph:40,  rpd:320,  status:"Available" },
+  { id:4, type:"Car",   brand:"Maruti",  model:"Swift",          reg:"MH12-DD-0004", fuel:"Petrol",   rph:150, rpd:1200, status:"Available" },
+  { id:5, type:"Car",   brand:"Hyundai", model:"i20",            reg:"MH12-EE-0005", fuel:"Petrol",   rph:180, rpd:1500, status:"Available" },
+  { id:6, type:"Car",   brand:"Tata",    model:"Nexon EV",       reg:"MH12-FF-0006", fuel:"Electric", rph:200, rpd:1800, status:"Available" },
+  { id:7, type:"Bike",  brand:"Ola",     model:"S1 Pro",         reg:"MH12-GG-0007", fuel:"Electric", rph:60,  rpd:480,  status:"Available" },
+];
+
+const INIT_CUSTOMERS = [
+  { id:1, name:"Yash Patil",       phone:"9876543210", license:"MH12AB1234", address:"Bhosari, Pune" },
+  { id:2, name:"Riya Sharma",      phone:"9123456780", license:"MH14CD5678", address:"Wakad, Pune" },
+  { id:3, name:"Arjun Deshmukh",   phone:"9012345678", license:"MH15EF9012", address:"Kothrud, Pune" },
+];
+
+function calcAmount(vehicle, rentType, startDT, endDT) {
+  const diffMs   = new Date(endDT) - new Date(startDT);
+  const diffHrs  = diffMs / (1000 * 3600);
+  if (rentType === "Hourly") return Math.ceil(diffHrs) * vehicle.rph;
+  const diffDays = Math.ceil(diffHrs / 24);
+  return diffDays * vehicle.rpd;
+}
+
+const FUEL_ICON = { Petrol:"⛽", Diesel:"🛢️", Electric:"⚡" };
+const TYPE_ICON = { Bike:"🏍️", Car:"🚗" };
+const STATUS_COLOR = { Available:"#22c55e", Booked:"#f59e0b", Maintenance:"#ef4444" };
+
+// ── SVG Icons ──────────────────────────────────────────────────────
+const Icon = {
+  dash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
+  vehicle: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18"><path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v7a2 2 0 0 1-2 2h-2"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>,
+  booking: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
+  history: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>,
+  plus: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+  close: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+  rupee: "₹",
+};
+
+// ── Styles ─────────────────────────────────────────────────────────
+const S = {
+  app: {
+    fontFamily:"'DM Sans', sans-serif",
+    background:"#0c0c0f",
+    minHeight:"100vh",
+    display:"flex",
+    color:"#e8e8ea",
+  },
+  sidebar: {
+    width:"220px", minHeight:"100vh", flexShrink:0,
+    background:"#111116",
+    borderRight:"1px solid #1e1e26",
+    display:"flex", flexDirection:"column",
+    padding:"0",
+    position:"sticky", top:0, height:"100vh",
+  },
+  logo: {
+    padding:"28px 24px 20px",
+    borderBottom:"1px solid #1e1e26",
+  },
+  logoText: {
+    fontFamily:"'Syne', sans-serif", fontWeight:800, fontSize:"20px",
+    color:"#fff", letterSpacing:"-0.5px",
+    display:"flex", alignItems:"center", gap:"8px",
+  },
+  logoSub: { fontSize:"10px", color:"#555", fontFamily:"'DM Mono', monospace", marginTop:"2px" },
+  navList: { listStyle:"none", padding:"16px 12px", margin:0, flex:1 },
+  navItem: (active) => ({
+    display:"flex", alignItems:"center", gap:"10px",
+    padding:"10px 14px", borderRadius:"8px", cursor:"pointer",
+    fontSize:"14px", fontWeight: active ? "600" : "400",
+    color: active ? "#fff" : "#888",
+    background: active ? "#ff6b00" : "transparent",
+    marginBottom:"4px",
+    transition:"all .15s",
+  }),
+  main: { flex:1, padding:"32px 36px", overflowY:"auto" },
+  pageTitle: {
+    fontFamily:"'Syne', sans-serif", fontWeight:800,
+    fontSize:"28px", color:"#fff", marginBottom:"6px",
+  },
+  pageSubtitle: { color:"#666", fontSize:"14px", marginBottom:"28px" },
+  statsRow: { display:"flex", gap:"16px", marginBottom:"32px", flexWrap:"wrap" },
+  statCard: {
+    flex:"1 1 160px",
+    background:"#111116", border:"1px solid #1e1e26",
+    borderRadius:"12px", padding:"20px 22px",
+  },
+  statLabel: { fontSize:"11px", color:"#555", textTransform:"uppercase", letterSpacing:"1px", marginBottom:"8px" },
+  statVal: { fontFamily:"'Syne', sans-serif", fontWeight:800, fontSize:"30px", color:"#fff" },
+  statSub: { fontSize:"12px", color:"#555", marginTop:"4px" },
+  grid: { display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))", gap:"16px" },
+  card: {
+    background:"#111116", border:"1px solid #1e1e26",
+    borderRadius:"14px", padding:"20px", position:"relative",
+    transition:"border-color .2s",
+    cursor:"default",
+  },
+  cardTop: { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"14px" },
+  badge: (color) => ({
+    fontSize:"11px", padding:"3px 9px", borderRadius:"20px", fontWeight:600,
+    background: color + "22", color, border:"1px solid " + color + "44",
+    fontFamily:"'DM Mono', monospace",
+  }),
+  vehicleName: { fontFamily:"'Syne', sans-serif", fontWeight:700, fontSize:"18px", color:"#fff", marginBottom:"2px" },
+  vehicleSub: { fontSize:"12px", color:"#666" },
+  metaRow: { display:"flex", gap:"16px", marginTop:"14px", paddingTop:"14px", borderTop:"1px solid #1e1e26" },
+  metaItem: { fontSize:"12px", color:"#888", display:"flex", flexDirection:"column", gap:"3px" },
+  metaVal: { color:"#e0e0e0", fontWeight:600, fontFamily:"'DM Mono', monospace", fontSize:"13px" },
+  btn: {
+    display:"inline-flex", alignItems:"center", gap:"6px",
+    padding:"9px 18px", borderRadius:"8px", fontSize:"13px",
+    fontWeight:600, cursor:"pointer", border:"none",
+    transition:"all .15s",
+  },
+  btnPrimary: { background:"#ff6b00", color:"#fff" },
+  btnGhost: { background:"transparent", color:"#aaa", border:"1px solid #2a2a35" },
+  btnDanger: { background:"#ef444422", color:"#ef4444", border:"1px solid #ef444440" },
+  btnSuccess: { background:"#22c55e22", color:"#22c55e", border:"1px solid #22c55e40" },
+  // Modal
+  overlay: {
+    position:"fixed", inset:0, background:"rgba(0,0,0,.75)",
+    display:"flex", alignItems:"center", justifyContent:"center",
+    zIndex:1000, backdropFilter:"blur(4px)",
+  },
+  modal: {
+    background:"#14141a", border:"1px solid #2a2a35",
+    borderRadius:"16px", padding:"32px", width:"480px",
+    maxWidth:"95vw", maxHeight:"90vh", overflowY:"auto",
+  },
+  modalTitle: { fontFamily:"'Syne', sans-serif", fontWeight:800, fontSize:"20px", color:"#fff", marginBottom:"6px" },
+  modalSub: { color:"#666", fontSize:"13px", marginBottom:"24px" },
+  label: { display:"block", fontSize:"12px", color:"#888", marginBottom:"6px", textTransform:"uppercase", letterSpacing:".5px" },
+  input: {
+    width:"100%", background:"#0c0c0f", border:"1px solid #2a2a35",
+    borderRadius:"8px", padding:"10px 14px", color:"#e8e8ea",
+    fontSize:"14px", outline:"none", boxSizing:"border-box",
+    fontFamily:"'DM Sans', sans-serif",
+  },
+  select: {
+    width:"100%", background:"#0c0c0f", border:"1px solid #2a2a35",
+    borderRadius:"8px", padding:"10px 14px", color:"#e8e8ea",
+    fontSize:"14px", outline:"none", boxSizing:"border-box",
+    cursor:"pointer", fontFamily:"'DM Sans', sans-serif",
+  },
+  formGroup: { marginBottom:"18px" },
+  row2: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:"14px" },
+  divider: { borderColor:"#1e1e26", margin:"20px 0" },
+  amountBox: {
+    background:"#ff6b0011", border:"1px solid #ff6b0033",
+    borderRadius:"10px", padding:"14px 18px", marginBottom:"20px",
+    display:"flex", alignItems:"center", justifyContent:"space-between",
+  },
+  amountLabel: { fontSize:"13px", color:"#ff9444" },
+  amountVal: { fontFamily:"'Syne', sans-serif", fontWeight:800, fontSize:"24px", color:"#ff6b00" },
+  // Table
+  tableWrap: { overflowX:"auto" },
+  table: { width:"100%", borderCollapse:"collapse", fontSize:"14px" },
+  th: { textAlign:"left", padding:"12px 16px", borderBottom:"1px solid #1e1e26", fontSize:"11px", color:"#555", textTransform:"uppercase", letterSpacing:"1px", whiteSpace:"nowrap" },
+  td: { padding:"14px 16px", borderBottom:"1px solid #1a1a22", color:"#ccc", verticalAlign:"middle" },
+  emptyState: { textAlign:"center", padding:"60px 20px", color:"#444" },
+  emptyIcon: { fontSize:"48px", marginBottom:"12px" },
+  emptyText: { fontFamily:"'Syne', sans-serif", fontWeight:700, fontSize:"18px", color:"#333" },
+  filterRow: { display:"flex", gap:"10px", marginBottom:"20px", flexWrap:"wrap" },
+  filterBtn: (active) => ({
+    padding:"7px 16px", borderRadius:"20px", fontSize:"13px", fontWeight:600,
+    cursor:"pointer", border:"none",
+    background: active ? "#ff6b00" : "#1a1a22",
+    color: active ? "#fff" : "#666",
+    transition:"all .15s",
+  }),
+  toast: {
+    position:"fixed", bottom:"24px", right:"24px",
+    background:"#22c55e", color:"#fff",
+    padding:"12px 20px", borderRadius:"10px",
+    fontWeight:600, fontSize:"14px", zIndex:9999,
+    boxShadow:"0 8px 24px rgba(34,197,94,.3)",
+  },
+  toastErr: { background:"#ef4444", boxShadow:"0 8px 24px rgba(239,68,68,.3)" },
+  sectionCard: {
+    background:"#111116", border:"1px solid #1e1e26",
+    borderRadius:"14px", padding:"24px",
+  },
+};
+
+// ── Toast ──────────────────────────────────────────────────────────
+function Toast({ msg, type, onDone }) {
+  useEffect(() => { const t = setTimeout(onDone, 2800); return () => clearTimeout(t); }, []);
+  return <div style={{ ...S.toast, ...(type==="err" ? S.toastErr : {}) }}>{msg}</div>;
+}
+
+// ── Main App ───────────────────────────────────────────────────────
+export default function App() {
+  const [page, setPage]         = useState("dashboard");
+  const [vehicles, setVehicles] = useState(INIT_VEHICLES);
+  const [customers]             = useState(INIT_CUSTOMERS);
+  const [bookings, setBookings] = useState([]);
+  const [history, setHistory]   = useState([]);
+  const [toast, setToast]       = useState(null);
+
+  const showToast = (msg, type="ok") => setToast({ msg, type });
+  const avail = vehicles.filter(v => v.status === "Available").length;
+  const booked = vehicles.filter(v => v.status === "Booked").length;
+  const totalRev = history.reduce((s, h) => s + h.finalAmount, 0);
+
+  const handleBook = (booking) => {
+    setBookings(b => [...b, booking]);
+    setVehicles(v => v.map(x => x.id === booking.vehicleId ? { ...x, status:"Booked" } : x));
+    showToast("Vehicle booked successfully! 🎉");
+  };
+
+  const handleReturn = (bookingId, returnDT, payMethod) => {
+    const bk = bookings.find(b => b.id === bookingId);
+    const veh = vehicles.find(v => v.id === bk.vehicleId);
+    const diffMs = new Date(returnDT) - new Date(bk.endDT);
+    const extraHrs = diffMs > 0 ? diffMs / (1000 * 3600) : 0;
+    const lateCharge = extraHrs > 0 ? Math.ceil(extraHrs) * veh.rph * 1.5 : 0;
+    const finalAmount = bk.amount + lateCharge;
+
+    setHistory(h => [...h, {
+      id: Date.now(), bookingId, customer: bk.customerName,
+      vehicle: `${veh.brand} ${veh.model}`, returnDT,
+      baseAmount: bk.amount, lateCharge, finalAmount, payMethod,
+    }]);
+    setBookings(b => b.filter(x => x.id !== bookingId));
+    setVehicles(v => v.map(x => x.id === bk.vehicleId ? { ...x, status:"Available" } : x));
+    showToast(lateCharge > 0 ? `Returned with ₹${lateCharge.toFixed(0)} late fee.` : "Vehicle returned successfully! ✅");
+  };
+
+  const navItems = [
+    { id:"dashboard", label:"Dashboard",  icon: Icon.dash },
+    { id:"vehicles",  label:"Fleet",      icon: Icon.vehicle },
+    { id:"book",      label:"New Booking", icon: Icon.booking },
+    { id:"active",   label:"Active",      icon: Icon.plus },
+    { id:"history",  label:"History",     icon: Icon.history },
+  ];
+
+  return (
+    <div style={S.app}>
+      {/* Sidebar */}
+      <aside style={S.sidebar}>
+        <div style={S.logo}>
+          <div style={S.logoText}><span>🚗</span> DriveEase</div>
+          <div style={S.logoSub}>VEHICLE RENTAL SYSTEM</div>
+        </div>
+        <ul style={S.navList}>
+          {navItems.map(n => (
+            <li key={n.id} style={S.navItem(page===n.id)} onClick={() => setPage(n.id)}>
+              {n.icon} {n.label}
+              {n.id==="active" && bookings.length > 0 &&
+                <span style={{ marginLeft:"auto", background:"#ff6b00", color:"#fff", fontSize:"11px", padding:"1px 7px", borderRadius:"10px" }}>{bookings.length}</span>
+              }
+            </li>
+          ))}
+        </ul>
+        <div style={{ padding:"16px 24px", borderTop:"1px solid #1e1e26", fontSize:"11px", color:"#444", fontFamily:"'DM Mono', monospace" }}>
+          DBMS Mini Project
+        </div>
+      </aside>
+
+      {/* Main */}
+      <main style={S.main}>
+        {page === "dashboard" && <Dashboard avail={avail} booked={booked} totalRev={totalRev} bookings={bookings} history={history} vehicles={vehicles} />}
+        {page === "vehicles"  && <Fleet vehicles={vehicles} />}
+        {page === "book"      && <BookingForm vehicles={vehicles} customers={customers} onBook={handleBook} showToast={showToast} />}
+        {page === "active"    && <ActiveBookings bookings={bookings} vehicles={vehicles} onReturn={handleReturn} />}
+        {page === "history"   && <History history={history} />}
+      </main>
+
+      {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} />}
+    </div>
+  );
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────
+function Dashboard({ avail, booked, totalRev, bookings, history, vehicles }) {
+  return (
+    <>
+      <div style={S.pageTitle}>Dashboard</div>
+      <div style={S.pageSubtitle}>Overview of your rental fleet</div>
+
+      <div style={S.statsRow}>
+        {[
+          { label:"Total Fleet",      val: vehicles.length,  sub:"vehicles", icon:"🚘" },
+          { label:"Available Now",    val: avail,            sub:"ready to rent", icon:"✅" },
+          { label:"Currently Rented", val: booked,           sub:"active bookings", icon:"🔑" },
+          { label:"Total Revenue",    val: `₹${totalRev.toLocaleString()}`, sub:"all time", icon:"💰" },
+        ].map(s => (
+          <div key={s.label} style={S.statCard}>
+            <div style={S.statLabel}>{s.label}</div>
+            <div style={{ ...S.statVal, fontSize: s.label==="Total Revenue" ? "24px" : "30px" }}>{s.val}</div>
+            <div style={S.statSub}>{s.icon} {s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"20px" }}>
+        {/* Recent bookings */}
+        <div style={S.sectionCard}>
+          <div style={{ fontFamily:"'Syne', sans-serif", fontWeight:700, fontSize:"16px", marginBottom:"16px" }}>Active Bookings</div>
+          {bookings.length === 0
+            ? <div style={{ color:"#444", fontSize:"14px" }}>No active bookings yet.</div>
+            : bookings.slice(-4).map(b => (
+              <div key={b.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:"1px solid #1e1e26" }}>
+                <div>
+                  <div style={{ fontSize:"14px", fontWeight:600 }}>{b.customerName}</div>
+                  <div style={{ fontSize:"12px", color:"#666" }}>{b.vehicleName}</div>
+                </div>
+                <div style={{ fontFamily:"'DM Mono', monospace", color:"#ff6b00", fontWeight:600 }}>₹{b.amount}</div>
+              </div>
+            ))
+          }
+        </div>
+
+        {/* Fleet status */}
+        <div style={S.sectionCard}>
+          <div style={{ fontFamily:"'Syne', sans-serif", fontWeight:700, fontSize:"16px", marginBottom:"16px" }}>Fleet Status</div>
+          {vehicles.map(v => (
+            <div key={v.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:"1px solid #1e1e26" }}>
+              <div style={{ fontSize:"14px" }}>{TYPE_ICON[v.type]} {v.brand} {v.model}</div>
+              <span style={S.badge(STATUS_COLOR[v.status])}>{v.status}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Fleet ──────────────────────────────────────────────────────────
+function Fleet({ vehicles }) {
+  const [filter, setFilter] = useState("All");
+  const filtered = filter === "All" ? vehicles : vehicles.filter(v => filter === "Available" ? v.status === "Available" : v.type === filter);
+
+  return (
+    <>
+      <div style={S.pageTitle}>Fleet Management</div>
+      <div style={S.pageSubtitle}>All vehicles in your rental fleet</div>
+
+      <div style={S.filterRow}>
+        {["All","Available","Bike","Car"].map(f => (
+          <button key={f} style={S.filterBtn(filter===f)} onClick={() => setFilter(f)}>{f}</button>
+        ))}
+      </div>
+
+      <div style={S.grid}>
+        {filtered.map(v => (
+          <div key={v.id} style={{ ...S.card, borderColor: v.status==="Available" ? "#22c55e22" : "#1e1e26" }}>
+            <div style={S.cardTop}>
+              <div>
+                <div style={{ fontSize:"28px", marginBottom:"6px" }}>{TYPE_ICON[v.type]}</div>
+                <div style={S.vehicleName}>{v.brand} {v.model}</div>
+                <div style={S.vehicleSub}>{v.reg}</div>
+              </div>
+              <span style={S.badge(STATUS_COLOR[v.status])}>{v.status}</span>
+            </div>
+            <div style={S.metaRow}>
+              <div style={S.metaItem}>
+                <span>Per Hour</span>
+                <span style={S.metaVal}>₹{v.rph}</span>
+              </div>
+              <div style={S.metaItem}>
+                <span>Per Day</span>
+                <span style={S.metaVal}>₹{v.rpd}</span>
+              </div>
+              <div style={S.metaItem}>
+                <span>Fuel</span>
+                <span style={S.metaVal}>{FUEL_ICON[v.fuel]} {v.fuel}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ── Booking Form ───────────────────────────────────────────────────
+function BookingForm({ vehicles, customers, onBook, showToast }) {
+  const availableVeh = vehicles.filter(v => v.status === "Available");
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2,"0");
+  const defaultStart = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+  const [form, setForm] = useState({
+    customerName:"", phone:"", license:"", address:"",
+    existingId:"", useExisting:false,
+    vehicleId:"", rentType:"Hourly",
+    startDT: defaultStart, endDT:"",
+  });
+  const [amount, setAmount] = useState(null);
+
+  const set = (k,v) => setForm(f => ({ ...f, [k]:v }));
+
+  const selectedVeh = availableVeh.find(v => v.id === Number(form.vehicleId));
+
+  useEffect(() => {
+    if (selectedVeh && form.startDT && form.endDT) {
+      const a = calcAmount(selectedVeh, form.rentType, form.startDT, form.endDT);
+      setAmount(a > 0 ? a : null);
+    } else setAmount(null);
+  }, [form.vehicleId, form.rentType, form.startDT, form.endDT]);
+
+  const handleSubmit = () => {
+    if (!form.vehicleId || !form.startDT || !form.endDT) { showToast("Fill all fields!", "err"); return; }
+    if (new Date(form.endDT) <= new Date(form.startDT)) { showToast("End time must be after start!", "err"); return; }
+    const name = form.useExisting
+      ? customers.find(c => c.id === Number(form.existingId))?.name || ""
+      : form.customerName;
+    if (!name) { showToast("Enter customer name!", "err"); return; }
+    onBook({
+      id: Date.now(),
+      customerName: name,
+      vehicleId: Number(form.vehicleId),
+      vehicleName: `${selectedVeh.brand} ${selectedVeh.model}`,
+      startDT: form.startDT, endDT: form.endDT,
+      rentType: form.rentType,
+      amount: amount || 0,
+    });
+    setForm(f => ({ ...f, vehicleId:"", endDT:"", customerName:"", phone:"", license:"" }));
+    setAmount(null);
+  };
+
+  return (
+    <>
+      <div style={S.pageTitle}>New Booking</div>
+      <div style={S.pageSubtitle}>Fill in the details to rent a vehicle</div>
+
+      <div style={{ maxWidth:"600px" }}>
+        <div style={S.sectionCard}>
+
+          {/* Customer section */}
+          <div style={{ fontFamily:"'Syne', sans-serif", fontWeight:700, fontSize:"15px", marginBottom:"16px", color:"#ff9444" }}>👤 Customer Details</div>
+
+          <div style={S.formGroup}>
+            <label style={S.label}>Use existing customer?</label>
+            <div style={{ display:"flex", gap:"10px" }}>
+              <button style={{ ...S.btn, ...(form.useExisting ? S.btnPrimary : S.btnGhost) }} onClick={() => set("useExisting", true)}>Existing</button>
+              <button style={{ ...S.btn, ...(!form.useExisting ? S.btnPrimary : S.btnGhost) }} onClick={() => set("useExisting", false)}>New Customer</button>
+            </div>
+          </div>
+
+          {form.useExisting ? (
+            <div style={S.formGroup}>
+              <label style={S.label}>Select Customer</label>
+              <select style={S.select} value={form.existingId} onChange={e => set("existingId", e.target.value)}>
+                <option value="">-- select --</option>
+                {customers.map(c => <option key={c.id} value={c.id}>{c.name} — {c.phone}</option>)}
+              </select>
+            </div>
+          ) : (
+            <>
+              <div style={S.row2}>
+                <div style={S.formGroup}>
+                  <label style={S.label}>Full Name</label>
+                  <input style={S.input} placeholder="e.g. Rahul Joshi" value={form.customerName} onChange={e => set("customerName", e.target.value)} />
+                </div>
+                <div style={S.formGroup}>
+                  <label style={S.label}>Phone</label>
+                  <input style={S.input} placeholder="10-digit number" value={form.phone} onChange={e => set("phone", e.target.value)} />
+                </div>
+              </div>
+              <div style={S.row2}>
+                <div style={S.formGroup}>
+                  <label style={S.label}>License No.</label>
+                  <input style={S.input} placeholder="MH12AB1234" value={form.license} onChange={e => set("license", e.target.value)} />
+                </div>
+                <div style={S.formGroup}>
+                  <label style={S.label}>Address</label>
+                  <input style={S.input} placeholder="City, State" value={form.address} onChange={e => set("address", e.target.value)} />
+                </div>
+              </div>
+            </>
+          )}
+
+          <hr style={S.divider} />
+
+          {/* Vehicle section */}
+          <div style={{ fontFamily:"'Syne', sans-serif", fontWeight:700, fontSize:"15px", marginBottom:"16px", color:"#ff9444" }}>🚗 Vehicle & Schedule</div>
+
+          <div style={S.formGroup}>
+            <label style={S.label}>Select Vehicle</label>
+            <select style={S.select} value={form.vehicleId} onChange={e => set("vehicleId", e.target.value)}>
+              <option value="">-- available vehicles --</option>
+              {availableVeh.map(v => (
+                <option key={v.id} value={v.id}>{TYPE_ICON[v.type]} {v.brand} {v.model} — ₹{v.rph}/hr · ₹{v.rpd}/day</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={S.formGroup}>
+            <label style={S.label}>Rent Type</label>
+            <div style={{ display:"flex", gap:"10px" }}>
+              {["Hourly","Daily"].map(t => (
+                <button key={t} style={{ ...S.btn, ...(form.rentType===t ? S.btnPrimary : S.btnGhost) }} onClick={() => set("rentType", t)}>{t}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={S.row2}>
+            <div style={S.formGroup}>
+              <label style={S.label}>Start Date & Time</label>
+              <input type="datetime-local" style={S.input} value={form.startDT} onChange={e => set("startDT", e.target.value)} />
+            </div>
+            <div style={S.formGroup}>
+              <label style={S.label}>End Date & Time</label>
+              <input type="datetime-local" style={S.input} value={form.endDT} onChange={e => set("endDT", e.target.value)} />
+            </div>
+          </div>
+
+          {amount !== null && (
+            <div style={S.amountBox}>
+              <span style={S.amountLabel}>💰 Estimated Rent</span>
+              <span style={S.amountVal}>₹{amount.toLocaleString()}</span>
+            </div>
+          )}
+
+          <button style={{ ...S.btn, ...S.btnPrimary, width:"100%", justifyContent:"center", padding:"13px" }} onClick={handleSubmit}>
+            Confirm Booking
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Active Bookings ────────────────────────────────────────────────
+function ActiveBookings({ bookings, vehicles, onReturn }) {
+  const [returnModal, setReturnModal] = useState(null);
+  const [returnDT, setReturnDT]       = useState("");
+  const [payMethod, setPayMethod]     = useState("Cash");
+
+  const openReturn = (b) => {
+    setReturnModal(b);
+    const now = new Date();
+    const pad = n => String(n).padStart(2,"0");
+    setReturnDT(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`);
+  };
+
+  const confirmReturn = () => {
+    onReturn(returnModal.id, returnDT, payMethod);
+    setReturnModal(null);
+  };
+
+  const getVeh = (id) => vehicles.find(v => v.id === id);
+
+  return (
+    <>
+      <div style={S.pageTitle}>Active Bookings</div>
+      <div style={S.pageSubtitle}>{bookings.length} vehicle(s) currently rented</div>
+
+      {bookings.length === 0 ? (
+        <div style={S.emptyState}>
+          <div style={S.emptyIcon}>🔑</div>
+          <div style={S.emptyText}>No active bookings</div>
+          <div style={{ color:"#555", fontSize:"14px", marginTop:"8px" }}>Go to New Booking to rent a vehicle</div>
+        </div>
+      ) : (
+        <div style={S.sectionCard}>
+          <div style={S.tableWrap}>
+            <table style={S.table}>
+              <thead>
+                <tr>
+                  {["Customer","Vehicle","Rent Type","Start","End","Amount","Action"].map(h => (
+                    <th key={h} style={S.th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {bookings.map(b => {
+                  const v = getVeh(b.vehicleId);
+                  return (
+                    <tr key={b.id}>
+                      <td style={S.td}><div style={{ fontWeight:600, color:"#fff" }}>{b.customerName}</div></td>
+                      <td style={S.td}>{TYPE_ICON[v?.type]} {b.vehicleName}</td>
+                      <td style={S.td}><span style={S.badge("#f59e0b")}>{b.rentType}</span></td>
+                      <td style={{ ...S.td, fontFamily:"'DM Mono', monospace", fontSize:"12px" }}>{b.startDT?.replace("T"," ")}</td>
+                      <td style={{ ...S.td, fontFamily:"'DM Mono', monospace", fontSize:"12px" }}>{b.endDT?.replace("T"," ")}</td>
+                      <td style={{ ...S.td, color:"#ff6b00", fontFamily:"'DM Mono', monospace", fontWeight:600 }}>₹{b.amount.toLocaleString()}</td>
+                      <td style={S.td}>
+                        <button style={{ ...S.btn, ...S.btnSuccess, padding:"7px 14px" }} onClick={() => openReturn(b)}>Return</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Return Modal */}
+      {returnModal && (
+        <div style={S.overlay} onClick={() => setReturnModal(null)}>
+          <div style={S.modal} onClick={e => e.stopPropagation()}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"6px" }}>
+              <div style={S.modalTitle}>Return Vehicle</div>
+              <button style={{ ...S.btn, ...S.btnGhost, padding:"6px 10px" }} onClick={() => setReturnModal(null)}>{Icon.close}</button>
+            </div>
+            <div style={S.modalSub}>Complete the return for <strong style={{ color:"#fff" }}>{returnModal.vehicleName}</strong></div>
+
+            <div style={{ background:"#0c0c0f", borderRadius:"10px", padding:"14px", marginBottom:"20px", fontSize:"13px", color:"#888" }}>
+              <div>Customer: <span style={{ color:"#fff", fontWeight:600 }}>{returnModal.customerName}</span></div>
+              <div style={{ marginTop:"6px" }}>Expected Return: <span style={{ color:"#ff9444", fontFamily:"'DM Mono', monospace" }}>{returnModal.endDT?.replace("T"," ")}</span></div>
+              <div style={{ marginTop:"6px" }}>Base Amount: <span style={{ color:"#22c55e", fontFamily:"'DM Mono', monospace" }}>₹{returnModal.amount}</span></div>
+            </div>
+
+            <div style={S.formGroup}>
+              <label style={S.label}>Actual Return Date & Time</label>
+              <input type="datetime-local" style={S.input} value={returnDT} onChange={e => setReturnDT(e.target.value)} />
+            </div>
+
+            {returnDT && new Date(returnDT) > new Date(returnModal.endDT) && (() => {
+              const veh = { rph: returnModal.amount }; // approx
+              const extraMs = new Date(returnDT) - new Date(returnModal.endDT);
+              const extraHrs = Math.ceil(extraMs / (1000*3600));
+              return (
+                <div style={{ ...S.amountBox, background:"#ef444411", borderColor:"#ef444433", marginBottom:"16px" }}>
+                  <span style={{ fontSize:"13px", color:"#ef9090" }}>⚠️ Late by ~{extraHrs}hr — late fee applies (1.5×/hr)</span>
+                </div>
+              );
+            })()}
+
+            <div style={S.formGroup}>
+              <label style={S.label}>Payment Method</label>
+              <select style={S.select} value={payMethod} onChange={e => setPayMethod(e.target.value)}>
+                {["Cash","UPI","Card","NetBanking"].map(m => <option key={m}>{m}</option>)}
+              </select>
+            </div>
+
+            <button style={{ ...S.btn, ...S.btnPrimary, width:"100%", justifyContent:"center", padding:"13px" }} onClick={confirmReturn}>
+              Confirm Return & Payment
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── History ────────────────────────────────────────────────────────
+function History({ history }) {
+  const totalRev = history.reduce((s,h) => s+h.finalAmount, 0);
+  const totalLate = history.reduce((s,h) => s+h.lateCharge, 0);
+
+  return (
+    <>
+      <div style={S.pageTitle}>Rental History</div>
+      <div style={S.pageSubtitle}>Completed transactions</div>
+
+      <div style={S.statsRow}>
+        {[
+          { label:"Total Completed", val: history.length, sub:"rentals" },
+          { label:"Total Revenue",   val: `₹${totalRev.toLocaleString()}`, sub:"collected" },
+          { label:"Late Fees",       val: `₹${totalLate.toLocaleString()}`, sub:"collected" },
+        ].map(s => (
+          <div key={s.label} style={S.statCard}>
+            <div style={S.statLabel}>{s.label}</div>
+            <div style={{ ...S.statVal, fontSize:"24px" }}>{s.val}</div>
+            <div style={S.statSub}>{s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {history.length === 0 ? (
+        <div style={S.emptyState}>
+          <div style={S.emptyIcon}>📋</div>
+          <div style={S.emptyText}>No history yet</div>
+          <div style={{ color:"#555", fontSize:"14px", marginTop:"8px" }}>Completed rentals will appear here</div>
+        </div>
+      ) : (
+        <div style={S.sectionCard}>
+          <div style={S.tableWrap}>
+            <table style={S.table}>
+              <thead>
+                <tr>
+                  {["Customer","Vehicle","Return Time","Base","Late Fee","Final Amt","Method"].map(h => (
+                    <th key={h} style={S.th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...history].reverse().map(h => (
+                  <tr key={h.id}>
+                    <td style={{ ...S.td, fontWeight:600, color:"#fff" }}>{h.customer}</td>
+                    <td style={S.td}>{h.vehicle}</td>
+                    <td style={{ ...S.td, fontFamily:"'DM Mono', monospace", fontSize:"12px" }}>{h.returnDT?.replace("T"," ")}</td>
+                    <td style={{ ...S.td, fontFamily:"'DM Mono', monospace" }}>₹{h.baseAmount}</td>
+                    <td style={{ ...S.td, color: h.lateCharge > 0 ? "#ef4444" : "#555", fontFamily:"'DM Mono', monospace" }}>
+                      {h.lateCharge > 0 ? `+₹${h.lateCharge.toFixed(0)}` : "—"}
+                    </td>
+                    <td style={{ ...S.td, color:"#22c55e", fontFamily:"'DM Mono', monospace", fontWeight:700 }}>₹{h.finalAmount.toFixed(0)}</td>
+                    <td style={S.td}><span style={S.badge("#818cf8")}>{h.payMethod}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
